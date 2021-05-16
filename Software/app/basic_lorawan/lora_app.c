@@ -27,6 +27,11 @@
 #include "LmHandler.h"
 #include "lora_info.h"
 
+
+    int32_t temperature = 0;
+    int32_t humidity = 0;
+
+
 /**
   * @brief LoRa State Machine states
   */
@@ -232,6 +237,39 @@ static void OnRxData(LmHandlerAppData_t *appData, LmHandlerRxParams_t *params)
   }
 }
 
+// baxter add function read temp
+#define NUMBER_TEMPERATURE_SENSOR_READ 5
+#define TEMPERATURE_SENSOR_READ_INTERVAL 1000
+
+void temperature_sensor_read_data_polling(uint8_t n_reads, uint32_t read_delay)
+{
+    int16_t status = 0;
+    uint8_t read_counter = 0;
+    sensirion_i2c_init();
+    if (SHTC3_probe() != SHTC3_STATUS_OK)
+    {
+        APP_PPRINTF("\r\n Failed to initialize SHTC3 Temperature Sensor\r\n");
+    }
+    for (read_counter = 0; read_counter < n_reads; read_counter++)
+    {
+
+        status = SHTC3_measure_blocking_read(&temperature, &humidity);
+        if (status == SHTC3_STATUS_OK)
+        {
+            //Remove the division by 1000 to observe the higher resolution
+            APP_PPRINTF("\r\n Measured Temperature: %d'C & Relative Humidity: %d \r\n", temperature / 1000, humidity / 1000);
+        }
+        else
+        {
+            APP_PPRINTF("\r\n Failed to read data from SHTC3 sensor \r\n");
+        }
+        HAL_Delay(read_delay);
+    }
+}
+// baxter end function read temp
+
+
+
 static void SendTxData(void)
 {
   UTIL_TIMER_Time_t nextTxIn = 0;
@@ -241,13 +279,22 @@ static void SendTxData(void)
 
   // User can add any indication here (LED manipulation or Buzzer)
 
+ // baxter read tempeature
+  temperature_sensor_read_data_polling(NUMBER_TEMPERATURE_SENSOR_READ, TEMPERATURE_SENSOR_READ_INTERVAL);
+
   UTIL_TIMER_Start(&TxLedTimer);
 
+  uint16_t t = temperature / 10;
+  uint16_t h = humidity / 10;
+
   AppData.Port = LORAWAN_APP_PORT;
-  AppData.BufferSize = 3;
-  AppData.Buffer[0] = 0xAA;
-  AppData.Buffer[1] = 0xBB;
-  AppData.Buffer[2] = 0xCC;
+  AppData.BufferSize = 5;
+//  AppData.Buffer[0] = 0xAA;
+  AppData.Buffer[0] = (uint8_t)(t >> 8);;
+  AppData.Buffer[1] = (uint8_t)t;
+  AppData.Buffer[2] =   (uint8_t)(h >> 8);
+  AppData.Buffer[3] =   (uint8_t)h;
+  AppData.Buffer[4] = 0xAA;
 
   if (LORAMAC_HANDLER_SUCCESS == LmHandlerSend(&AppData, LORAWAN_DEFAULT_CONFIRMED_MSG_STATE, &nextTxIn, false))
   {
